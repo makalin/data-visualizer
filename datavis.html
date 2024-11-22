@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        :root[data-theme="light"] {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --border-color: #cccccc;
+            --header-bg: #f8f9fa;
+            --error-color: #dc3545;
+            --editor-bg: #2F3129;
+        }
+        
+        :root[data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --border-color: #404040;
+            --header-bg: #2d2d2d;
+            --error-color: #ff6b6b;
+            --editor-bg: #272822;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background-color: var(--header-bg);
+            border-radius: 8px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        #format-select, #theme-toggle {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .editor-container {
+            display: flex;
+            gap: 1rem;
+            height: calc(100vh - 120px);
+        }
+
+        .editor-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-label {
+            padding: 0.5rem;
+            background-color: var(--header-bg);
+            border-radius: 4px 4px 0 0;
+            font-weight: bold;
+            border: 1px solid var(--border-color);
+            border-bottom: none;
+        }
+
+        #input-editor, #output-editor {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            border-radius: 0 0 4px 4px;
+            background-color: var(--editor-bg);
+        }
+
+        .error {
+            color: var(--error-color);
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            border: 1px solid var(--error-color);
+            border-radius: 4px;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .editor-container {
+                flex-direction: column;
+                height: auto;
+            }
+            #input-editor, #output-editor {
+                height: 400px;
+            }
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            #header {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>Data Visualizer</h1>
+        <div class="controls">
+            <select id="format-select">
+                <option value="json">JSON</option>
+                <option value="xml">XML</option>
+                <option value="php">PHP Serialized</option>
+                <option value="hex">Hexadecimal</option>
+                <option value="base64">Base64</option>
+                <option value="binary">Binary</option>
+            </select>
+            <button id="theme-toggle">Toggle Theme</button>
+        </div>
+    </div>
+    <div class="editor-container">
+        <div class="editor-wrapper">
+            <div class="editor-label">Input (Paste your raw data here)</div>
+            <div id="input-editor"></div>
+        </div>
+        <div class="editor-wrapper">
+            <div class="editor-label">Parsed Output</div>
+            <div id="output-editor"></div>
+        </div>
+    </div>
+    <div id="error" class="error"></div>
+
+    <script>
+        // Initialize theme
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+
+        // Initialize Ace editors
+        const inputEditor = ace.edit("input-editor");
+        inputEditor.setTheme("ace/theme/monokai");
+        inputEditor.session.setMode("ace/mode/text");
+        inputEditor.setOptions({
+            fontSize: "14px",
+            showPrintMargin: false,
+        });
+
+        const outputEditor = ace.edit("output-editor");
+        outputEditor.setTheme("ace/theme/monokai");
+        outputEditor.session.setMode("ace/mode/json");
+        outputEditor.setOptions({
+            fontSize: "14px",
+            showPrintMargin: false,
+            readOnly: true,
+        });
+
+        // Theme toggle functionality
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+        });
+
+        // Format handlers
+        const formatHandlers = {
+            json: (input) => {
+                const parsed = JSON.parse(input);
+                return JSON.stringify(parsed, null, 2);
+            },
+            xml: (input) => {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(input, "text/xml");
+                return formatXML(xmlDoc);
+            },
+            php: (input) => {
+                return parsePHPSerialized(input);
+            },
+            hex: (input) => {
+                const cleaned = input.replace(/\s/g, '');
+                const bytes = [];
+                for (let i = 0; i < cleaned.length; i += 2) {
+                    bytes.push(parseInt(cleaned.substr(i, 2), 16));
+                }
+                return new TextDecoder().decode(new Uint8Array(bytes));
+            },
+            base64: (input) => {
+                return atob(input.trim());
+            },
+            binary: (input) => {
+                const cleaned = input.replace(/\s/g, '');
+                const bytes = [];
+                for (let i = 0; i < cleaned.length; i += 8) {
+                    bytes.push(parseInt(cleaned.substr(i, 8), 2));
+                }
+                return new TextDecoder().decode(new Uint8Array(bytes));
+            }
+        };
+
+        // Helper function to format XML
+        function formatXML(xml) {
+            const serializer = new XMLSerializer();
+            const xmlString = serializer.serializeToString(xml);
+            let formatted = '';
+            let indent = '';
+            const tab = '  ';
+            xmlString.split(/>\s*</).forEach(node => {
+                if (node.match(/^\/\w/)) indent = indent.substring(tab.length);
+                formatted += indent + '<' + node + '>\r\n';
+                if (node.match(/^<?\w[^>]*[^\/]$/)) indent += tab;
+            });
+            return formatted.substring(1, formatted.length - 3);
+        }
+
+        // Basic PHP serialized data parser
+        function parsePHPSerialized(input) {
+            let result = {};
+            let pos = 0;
+
+            function parseValue() {
+                const type = input[pos++];
+                switch (type) {
+                    case 's':
+                        const colonPos = input.indexOf(':', pos);
+                        const length = parseInt(input.slice(pos, colonPos));
+                        pos = colonPos + 2;
+                        const value = input.slice(pos, pos + length);
+                        pos += length + 2;
+                        return value;
+                    case 'i':
+                        pos++;
+                        const numEnd = input.indexOf(';', pos);
+                        const num = parseInt(input.slice(pos, numEnd));
+                        pos = numEnd + 1;
+                        return num;
+                    case 'a':
+                        pos++;
+                        const arrEnd = input.indexOf(':', pos);
+                        const count = parseInt(input.slice(pos, arrEnd));
+                        pos = arrEnd + 2;
+                        const arr = {};
+                        for (let i = 0; i < count; i++) {
+                            const key = parseValue();
+                            const val = parseValue();
+                            arr[key] = val;
+                        }
+                        pos++;
+                        return arr;
+                    default:
+                        throw new Error('Unsupported type: ' + type);
+                }
+            }
+
+            return JSON.stringify(parseValue(), null, 2);
+        }
+
+        // Update format and handle input changes
+        function updateFormat() {
+            const format = document.getElementById('format-select').value;
+            const error = document.getElementById('error');
+            
+            try {
+                const input = inputEditor.getValue();
+                if (input.trim() === '') {
+                    outputEditor.setValue('');
+                    error.style.display = 'none';
+                    return;
+                }
+
+                const formatted = formatHandlers[format](input);
+                outputEditor.setValue(formatted);
+                outputEditor.clearSelection();
+                error.style.display = 'none';
+            } catch (e) {
+                error.textContent = `Error: ${e.message}`;
+                error.style.display = 'block';
+            }
+        }
+
+        // Event listeners
+        inputEditor.session.on('change', updateFormat);
+        document.getElementById('format-select').addEventListener('change', updateFormat);
+
+        // Handle paste event
+        document.addEventListener('paste', (e) => {
+            if (document.activeElement === document.body) {
+                e.preventDefault();
+                const text = e.clipboardData.getData('text');
+                inputEditor.setValue(text);
+                inputEditor.clearSelection();
+            }
+        });
+    </script>
+</body>
+</html>
