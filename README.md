@@ -2,6 +2,8 @@
 
 Data Visualizer is a web-based tool designed to parse and display various data formats, including JSON, XML, PHP Serialized, Hexadecimal, Base64, and Binary. It provides a user-friendly interface for inputting raw data and viewing the parsed output in a readable format.
 
+<img src="screen.gif" alt="Usage Instructions for Data Visualization" />
+
 ## Features
 
 - **Multiple Data Formats**: Supports parsing of JSON, XML, PHP Serialized, Hexadecimal, Base64, and Binary data.
